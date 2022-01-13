@@ -1,8 +1,13 @@
 #!/var/ossec/framework/python/bin/python3
-##### get_all_packages.py
+######## esquery.py ###########
 # Author: Juan C. Tello
 # Version: 2021.12.30
 # Description:
+#
+# This wodle (Wazuh module) gives Wazuh the capability to periodically 
+#   query the Elasticsearch to which it is integrated in order to alert
+#   whenever the result matches a specific criteria, for example if there 
+#   is an unexpected absence of events.
 #
 # Configuration example:
 #
@@ -26,7 +31,7 @@
 #    <match>Event query on Elasticsearch returned 0 hits</match>
 #    <description>ESquery returned 0 hits for rule group fortigate</description>
 #  </rule>
-#############################
+###############################
 
 import requests
 import yaml
