@@ -1,0 +1,161 @@
+#!/var/ossec/framework/python/bin/python3
+##### custom-email-alerts
+# Author: Juan C. Tello
+# Version: 2022.01.13
+# Description:
+# 
+# This integration allows the user to send fully customizable email alerts
+#  this is a simple implementation for which the message is customized in
+#  the generate_msg() function. A full html body is accepted if necessary.
+#  Another assumption is that the mail server does not require authentication
+#  the script can be easily adapted to use authentication or a local postfix
+#  proxy may be used as explained in steps 1-6 of the following guide:
+#  https://documentation.wazuh.com/4.2/user-manual/manager/manual-email-report/smtp-authentication.html
+#
+# Configuration example:
+#
+#  <integration>
+#      <name>custom-email-alerts</name>
+#      <hook_url>emailrecipient@example.com</hook_url>
+#      <group>attacks</group>
+#      <alert_format>json</alert_format>
+#  </integration>
+#############################
+
+import json
+import sys
+import time
+import os
+import smtplib
+from email.message import EmailMessage
+
+email_server = "smtp.email.com"
+email_from = "noreply@example.com"
+
+
+def generate_msg(alert):
+    """
+    Function that will provide the custom subject and body for the email.
+    It takes as input a dictionary object generated from the json alert
+    """
+    description = alert['rule']['description']
+    level = alert['rule']['level']
+    agentname = alert['agent']['name']
+    t = time.strptime(alert['timestamp'].split('.')[0],'%Y-%m-%dT%H:%M:%S')
+    timestamp = time.strftime('%c',t)
+
+    subject = 'Wazuh Alert: {0}, {1}'.format(description, agentname)
+
+    message = """
+    This is an automatic message from your Wazuh Instance.
+    
+    On {a} an event from agent "{b}" triggered the rule "{c}" of level {d}.
+    The full contents of the alert are:
+    {e}
+    """.format(a=timestamp,b=agentname,c=description,d=level,e=json.dumps(alert,indent=4))
+
+    return subject, message
+
+
+# Additional global vars
+debug_enabled = False
+pwd = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+json_alert = {}
+now = time.strftime("%a %b %d %H:%M:%S %Z %Y")
+
+# Set paths
+log_file = '{0}/logs/integrations.log'.format(pwd)
+
+def main(args):
+    """
+    Main function. This will call the functions to prepare the message and send the email 
+    """
+    debug("# Starting")
+
+    # Read args
+    alert_file_location = args[1]
+    recipients = args[3]
+ 
+    debug("# Webhook")
+    debug(recipients)
+
+    debug("# File location")
+    debug(alert_file_location)
+
+    # Load alert. Parse JSON object.
+    with open(alert_file_location) as alert_file:
+        json_alert = json.load(alert_file)
+    debug("# Processing alert")
+    debug(json_alert)
+
+    debug("# Generating message")
+    subject, msg = generate_msg(json_alert)
+    debug(msg)
+
+    debug("# Sending message")
+    send_email(recipients, subject, msg)
+
+def send_email(recipients,subject,body):
+    """
+    Function to send email using an unautheticated email server.
+    """
+    TO = recipients.split(',')
+    em = EmailMessage()
+    em.set_content(body)
+    em['To'] = TO
+    em['From'] = email_from 
+    em['Subject'] = subject
+    try:
+        # SMTP_SSL Example
+        mailserver = smtplib.SMTP(email_server, 25)
+        mailserver.ehlo() # optional, called by login()
+        mailserver.send_message(em)
+        mailserver.close()
+        debug('Successfully sent the mail to {}'.format(TO))
+    except Exception as e:
+        debug("Failed to send mail to {}".format(TO))
+        debug("With error: {}".format(e))
+
+def debug(msg):
+    """
+    Function to generate debug logs
+    """
+    if debug_enabled:
+        msg = "{0}: {1}\n".format(now, msg)
+        print(msg)
+        f = open(log_file, "a")
+        f.write(msg)
+        f.close()
+
+if __name__ == "__main__":
+    try:
+        # Read arguments
+        bad_arguments = False
+        if len(sys.argv) >= 4:
+            msg = '{0} {1} {2} {3} {4}'.format(
+                now,
+                sys.argv[1],
+                sys.argv[2],
+                sys.argv[3],
+                sys.argv[4] if len(sys.argv) > 4 else '',
+            )
+            debug_enabled = (len(sys.argv) > 4 and sys.argv[4] == 'debug')
+        else:
+            msg = '{0} Wrong arguments'.format(now)
+            bad_arguments = True
+
+        # Logging the call
+        f = open(log_file, 'a')
+        f.write(msg + '\n')
+        f.close()
+
+        if bad_arguments:
+            debug("# Exiting: Bad arguments.")
+            sys.exit(1)
+
+        # Main function
+        main(sys.argv)
+
+    except Exception as e:
+        debug(str(e))
+        raise
